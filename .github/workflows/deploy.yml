@@ -1,0 +1,69 @@
+# .github/workflows/deploy.yml
+#
+# Triggered by the SRE Agent Platform after a provisioning PR is merged.
+
+name: deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      resource_name:
+        description: "Resource name (informational)"
+        required: false
+      session_id:
+        description: "SRE Agent Platform session ID (informational)"
+        required: false
+      working_directory:
+        description: "Terraform workspace directory"
+        required: false
+        default: "Terraform/Environments/Infrastructure/us_nonprod"
+
+jobs:
+  deploy:
+    name: "Terraform Deploy"
+    runs-on: ubuntu-latest
+    environment: ${{ contains(inputs.working_directory, 'us_prod') && 'production' || 'non-production' }}
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.9"
+
+      - name: Terraform Init
+        run: |
+          terraform init -input=false \
+            -backend-config="storage_account_name=${{ secrets.TF_BACKEND_STORAGE_ACCOUNT }}"
+        working-directory: ${{ inputs.working_directory }}
+        env:
+          ARM_CLIENT_ID:       ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_CLIENT_SECRET:   ${{ secrets.AZURE_CLIENT_SECRET }}
+          ARM_TENANT_ID:       ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Terraform Plan
+        run: terraform plan -out=tfplan -input=false
+        working-directory: ${{ inputs.working_directory }}
+        env:
+          ARM_CLIENT_ID:               ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_CLIENT_SECRET:           ${{ secrets.AZURE_CLIENT_SECRET }}
+          ARM_TENANT_ID:               ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID:         ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          TF_VAR_admin_ssh_public_key: ${{ secrets.TF_SSH_PUBLIC_KEY }}
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve tfplan
+        working-directory: ${{ inputs.working_directory }}
+        env:
+          ARM_CLIENT_ID:               ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_CLIENT_SECRET:           ${{ secrets.AZURE_CLIENT_SECRET }}
+          ARM_TENANT_ID:               ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID:         ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          TF_VAR_admin_ssh_public_key: ${{ secrets.TF_SSH_PUBLIC_KEY }}
