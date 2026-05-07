@@ -1,0 +1,87 @@
+# .github/workflows/destroy.yml
+#
+# Rollback workflow — removes a service .tf file and applies Terraform to destroy the resource.
+
+name: destroy
+
+on:
+  workflow_dispatch:
+    inputs:
+      resource_name:
+        description: "Resource name to destroy (e.g. vm-myapp-baseline-eus)"
+        required: true
+      working_directory:
+        description: "Terraform workspace directory"
+        required: false
+        default: "Terraform/Environments/Infrastructure/us_nonprod"
+      session_id:
+        description: "SRE Agent Platform session ID (informational)"
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  destroy:
+    name: "Terraform Rollback"
+    runs-on: ubuntu-latest
+    environment: ${{ contains(inputs.working_directory, 'us_prod') && 'production' || 'non-production' }}
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.9"
+
+      - name: Remove service file and commit
+        run: |
+          SERVICE_FILE="${{ inputs.working_directory }}/${{ inputs.resource_name }}.tf"
+          if [ -f "$SERVICE_FILE" ]; then
+            git config user.email "sre-agent@noreply.github.com"
+            git config user.name "SRE Agent Platform"
+            git rm "$SERVICE_FILE"
+            git commit -m "rollback: remove ${{ inputs.resource_name }} (session: ${{ inputs.session_id || 'manual' }})"
+            git push
+          else
+            echo "Service file not found: $SERVICE_FILE — proceeding with terraform apply to reconcile state."
+          fi
+
+      - name: Terraform Init
+        run: |
+          terraform init -input=false \
+            -backend-config="storage_account_name=${{ secrets.TF_BACKEND_STORAGE_ACCOUNT }}"
+        working-directory: ${{ inputs.working_directory }}
+        env:
+          ARM_CLIENT_ID:       ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_CLIENT_SECRET:   ${{ secrets.AZURE_CLIENT_SECRET }}
+          ARM_TENANT_ID:       ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Terraform Plan
+        run: terraform plan -out=tfplan -input=false
+        working-directory: ${{ inputs.working_directory }}
+        env:
+          ARM_CLIENT_ID:               ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_CLIENT_SECRET:           ${{ secrets.AZURE_CLIENT_SECRET }}
+          ARM_TENANT_ID:               ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID:         ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          TF_VAR_admin_ssh_public_key: ${{ secrets.TF_SSH_PUBLIC_KEY }}
+
+      - name: Terraform Apply (destroys removed resources)
+        run: terraform apply -auto-approve tfplan
+        working-directory: ${{ inputs.working_directory }}
+        env:
+          ARM_CLIENT_ID:               ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_CLIENT_SECRET:           ${{ secrets.AZURE_CLIENT_SECRET }}
+          ARM_TENANT_ID:               ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID:         ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          TF_VAR_admin_ssh_public_key: ${{ secrets.TF_SSH_PUBLIC_KEY }}
