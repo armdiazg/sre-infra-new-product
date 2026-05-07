@@ -1,0 +1,104 @@
+{
+  "schema_version": "1.0",
+  "repo": "armdiazg/sre-infra-new-product",
+  "purpose": "FSI-compliant Terraform Infrastructure workspace \u2014 cloned from baseline template `armdiazg/sre-infra-baseline`. Add one .tf file per resource to the agent drop zones.",
+  "workspaces": {
+    "Terraform/Environments/Infrastructure/us_nonprod": {
+      "environment": "non-prod",
+      "concern": "Infrastructure",
+      "files": [
+        "main.tf",
+        "variables.tf",
+        "locals.tf",
+        "outputs.tf"
+      ],
+      "agent_drop_zone": true,
+      "description": "Drop one .tf file per service/VM here. Each file calls the TrackerCore module with workspace-inherited symbols."
+    },
+    "Terraform/Environments/Infrastructure/us_prod": {
+      "environment": "prod",
+      "concern": "Infrastructure",
+      "files": [
+        "main.tf",
+        "variables.tf",
+        "locals.tf",
+        "outputs.tf"
+      ],
+      "agent_drop_zone": true,
+      "description": "Production compute resources. CanNotDelete lock enforced."
+    },
+    "Terraform/Environments/Network/us_nonprod": {
+      "environment": "non-prod",
+      "concern": "Network",
+      "files": [
+        "main.tf",
+        "variables.tf",
+        "locals.tf",
+        "outputs.tf",
+        "vnet-baseline.tf"
+      ],
+      "agent_drop_zone": false,
+      "description": "VNet + Subnets baseline. CIDRs controlled by var.address_space and var.subnet_prefix. Outputs vnet_id and default_subnet_id."
+    },
+    "Terraform/Environments/Network/us_prod": {
+      "environment": "prod",
+      "concern": "Network",
+      "files": [
+        "main.tf",
+        "variables.tf",
+        "locals.tf",
+        "outputs.tf",
+        "vnet-baseline.tf"
+      ],
+      "agent_drop_zone": false,
+      "description": "Production VNet + Subnets."
+    }
+  },
+  "modules": {
+    "Terraform/Modules/TrackerCore": {
+      "description": "Core VM module (NIC + Linux VM). Mirrors TR TrackerCore pattern. Source from Infrastructure workspace: ../../../Modules/TrackerCore",
+      "inputs": [
+        "resource_name",
+        "vm_size",
+        "admin_username",
+        "subnet_id",
+        "admin_ssh_public_key",
+        "location",
+        "resource_group_name",
+        "tags"
+      ],
+      "outputs": [
+        "vm_id",
+        "vm_name",
+        "private_ip",
+        "nic_id"
+      ]
+    },
+    "Terraform/Modules/azure-tagged-rg": {
+      "description": "Reusable tagged Resource Group. Source: ../../../Modules/azure-tagged-rg",
+      "inputs": [
+        "name",
+        "location",
+        "tags"
+      ],
+      "outputs": [
+        "id",
+        "name",
+        "location"
+      ]
+    }
+  },
+  "workspace_symbols": {
+    "var.location": "Azure region string (default: eastus)",
+    "var.environment": "nonprod/prod",
+    "var.application_name": "short app identifier \u2014 set this per project",
+    "local.mandatory_tags": "8 FSI-required tags: Environment, Owner, CostCenter, Application, ManagedBy, Compliance, DataClass, ProvisionedBy",
+    "local.resource_group_name": "rg-{app}-{env}-{region_short}",
+    "module.baseline_rg.name": "the resource group to deploy resources into",
+    "module.baseline_rg.id": "the resource group ID"
+  },
+  "naming_convention": "rg-{app}-{env}-{region_short} | vnet-{app}-{env}-{region_short} | vm-{app}-{purpose}-{region_short}",
+  "tagging_policy": "All resources must use local.mandatory_tags. Never hardcode tags.",
+  "agent_instructions": "To provision a new VM: generate ONE .tf file named {resource_name}.tf in Terraform/Environments/Infrastructure/us_nonprod/ (or us_prod for prod). The file contains ONE module call: module \"{resource_name_slug}_core\" { source = \\\"../../../Modules/TrackerCore\\\" ... }. Do NOT add terraform{}/provider{} blocks \u2014 the workspace already provides these. Set subnet_id to the default_subnet_id output from Network/us_nonprod (run terraform output in that workspace to get the value, or read it from remote state). Reference var.location, local.mandatory_tags, module.baseline_rg.name from workspace symbols. Set admin_ssh_public_key = var.admin_ssh_public_key (injected by CI via TF_VAR_admin_ssh_public_key).",
+  "cloned_from": "armdiazg/sre-infra-baseline"
+}
