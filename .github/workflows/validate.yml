@@ -1,0 +1,47 @@
+# .github/workflows/validate.yml
+#
+# Runs on every PR that touches Terraform files.
+# Does NOT require Azure credentials — validation only.
+
+name: validate
+
+on:
+  pull_request:
+    paths:
+      - "Terraform/**"
+      - ".github/workflows/**"
+
+jobs:
+  validate:
+    name: "Terraform Validate"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.9"
+
+      - name: Format check
+        run: terraform fmt -check -recursive Terraform/
+
+      - name: Init + Validate — Infrastructure NonProd
+        working-directory: Terraform/Environments/Infrastructure/us_nonprod
+        run: |
+          terraform init -backend=false -input=false
+          terraform validate
+
+      - name: Init + Validate — Infrastructure Prod
+        working-directory: Terraform/Environments/Infrastructure/us_prod
+        run: |
+          terraform init -backend=false -input=false
+          terraform validate
+
+      - name: Init + Validate — Network NonProd
+        working-directory: Terraform/Environments/Network/us_nonprod
+        run: |
+          terraform init -backend=false -input=false
+          terraform validate
